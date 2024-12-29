@@ -10,8 +10,11 @@ public class Server {
     private SecretKey sessionKey;
     private final FileLogger logger;
 
-    public Server(String serverId) {
+    private KeyPair keyPair;
+
+    public Server(String serverId, KeyPair keyPair) {
         this.serverId = serverId;
+        this.keyPair = keyPair;
         this.logger = new FileLogger("log.txt");
         // In a real implementation, the private key would be loaded securely
     }
