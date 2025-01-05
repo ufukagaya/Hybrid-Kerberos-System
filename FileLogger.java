@@ -1,10 +1,12 @@
-import java.io.*;
+import java.io.BufferedWriter;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
 public class FileLogger {
-    private String logFile;
-    private DateTimeFormatter formatter;
+    private final String logFile;
+    private final DateTimeFormatter formatter;
 
     public FileLogger(String logFile) {
         this.logFile = logFile;
@@ -15,9 +17,12 @@ public class FileLogger {
         try (FileWriter fw = new FileWriter(logFile, true);
              BufferedWriter bw = new BufferedWriter(fw)) {
             String timestamp = LocalDateTime.now().format(formatter);
-            bw.write(timestamp + " - " + message + "\n");
+            String logMessage = timestamp + " - " + message + "\n";
+            bw.write(logMessage);
+
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
-} 
+
+}

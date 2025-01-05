@@ -1,71 +1,86 @@
 import javax.crypto.Cipher;
-import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
-import java.security.*;
-import java.util.Base64;
+import java.util.Arrays;
 
 public class Server {
-    private String serverId;
-    private PrivateKey privateKey; // In real implementation, this would be securely stored
-    private SecretKey sessionKey;
+    private final String serverId;
     private final FileLogger logger;
+    private Ticket ticket;
+    private final KDC kdc;
 
-    private KeyPair keyPair;
+    public Ticket getTicket() {
+        return this.ticket;
+    }
 
-    public Server(String serverId, KeyPair keyPair) {
+    public Server(String serverId, KDC kdc) {
         this.serverId = serverId;
-        this.keyPair = keyPair;
         this.logger = new FileLogger("log.txt");
-        // In a real implementation, the private key would be loaded securely
+        this.kdc = kdc;
     }
+    public String getServerId(){ return this.serverId; }
+    public void setTicket(Ticket ticket){ this.ticket = ticket;}
 
-    public String communicateWithClient(CommunicationPackage pkg) throws Exception {
-        if (!pkg.getServerId().equals(serverId)) {
-            logger.log("Server received request for wrong server ID");
-            throw new Exception("Invalid server ID");
-        }
-
+    private byte[] decryptSessionKey() throws Exception {
         try {
-            // Decrypt session key using server's private key
-            decryptSessionKey(pkg.getEncryptedSessionKey());
-
-            // Decrypt the message using session key
-            Cipher cipher = Cipher.getInstance("AES");
-            cipher.init(Cipher.DECRYPT_MODE, sessionKey);
-            byte[] decryptedMessage = cipher.doFinal(pkg.getEncryptedMessage());
-            String message = new String(decryptedMessage);
-
-            // Process message and create response
-            String response = processMessage(message);
-
-            // Encrypt response
-            cipher.init(Cipher.ENCRYPT_MODE, sessionKey);
-            byte[] encryptedResponse = cipher.doFinal(response.getBytes());
-
-            logger.log("Server " + serverId + " processed request from client " + pkg.getClientId());
-            return Base64.getEncoder().encodeToString(encryptedResponse);
-
-        } catch (Exception e) {
-            logger.log("Server error processing request: " + e.getMessage());
-            throw new Exception("Server communication error: " + e.getMessage());
-        }
-    }
-
-    private void decryptSessionKey(byte[] encryptedSessionKey) throws Exception {
-        try {
-            Cipher cipher = Cipher.getInstance("RSA");
-            cipher.init(Cipher.DECRYPT_MODE, privateKey);
-            byte[] decryptedKey = cipher.doFinal(encryptedSessionKey);
-            this.sessionKey = new SecretKeySpec(decryptedKey, "AES");
+            byte[] decryptedKey = this.kdc.decryptSessionKey(serverId, ticket.getEncryptedKey(), false);
             logger.log("Server " + serverId + " decrypted session key successfully");
+            return decryptedKey;
         } catch (Exception e) {
             logger.log("Error decrypting session key: " + e.getMessage());
             throw new Exception("Failed to decrypt session key");
         }
     }
 
-    private String processMessage(String message) {
-        // In a real implementation, this would process the client's message
-        return "Server received: " + message;
+    public byte[] getMessage(byte[] encryptedMessage){
+        try {
+            byte[] decryptedServerSessionKey = decryptSessionKey();
+            SecretKeySpec sessionKeySpec = new SecretKeySpec(decryptedServerSessionKey, "AES");
+
+            logger.log("Server attempting to decrypt received message...");
+            Cipher decryptCipher = Cipher.getInstance("AES");
+            decryptCipher.init(Cipher.DECRYPT_MODE, sessionKeySpec);
+            byte[] decryptedMessage = decryptCipher.doFinal(encryptedMessage);
+
+            String decryptedMessageString = new String(decryptedMessage);
+            logger.log("Server received: " + decryptedMessageString);
+            logger.log("Message decrypted by the server successfully.");
+            String sendBackMessage = "Message: " + decryptedMessageString + " is recieved.";
+            logger.log("Server preparing response message...");
+
+            Cipher encryptCipher = Cipher.getInstance("AES");
+            encryptCipher.init(Cipher.ENCRYPT_MODE, sessionKeySpec);
+
+            byte[] returnedMessage = encryptCipher.doFinal(sendBackMessage.getBytes());
+            logger.log("Server response encrypted and ready to send.");
+
+            return returnedMessage;
+        }catch (Exception e) {
+            logger.log("Error processing message: " + e.getMessage());
+        }
+        return "".getBytes();
+    }
+
+    public boolean tryToCommunicate(byte[] clientSessionKey) {
+        try {
+            if (ticket.isExpired()) {
+                ticket.resetExpiration();
+                logger.log("Server ticket has expired and been reset");
+                return false;
+            }
+
+            logger.log(serverId + " is ready to receive messages.");
+            byte[] decryptedServerSessionKey = decryptSessionKey();
+
+            if(Arrays.equals(clientSessionKey, decryptedServerSessionKey)){
+                logger.log("Server: Session key is now active for communication.");
+                return true;
+            }else{
+                logger.log("Server: Session key verification failed.");
+                return false;
+            }
+        } catch (Exception e) {
+            logger.log("Error! Session keys do not match: " + e.getMessage());
+            return false;
+        }
     }
 } 

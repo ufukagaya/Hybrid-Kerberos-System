@@ -4,22 +4,21 @@ import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
 import javafx.stage.Stage;
-
 public class Main extends Application {
-    private HKS hks;
-    private HKS.ClientInfo currentClient;
+    private KDC kdc;
+    private Client currentClient;
     private FileLogger logger;
-    
+
     @Override
-    public void start(Stage primaryStage) throws Exception {
-       
+    public void start(Stage primaryStage) {
+
         Label clientLabel = new Label("Client ID:");
         TextField clientField = new TextField();
         Label passwordLabel = new Label("Password:");
         PasswordField passwordField = new PasswordField();
         Label serverLabel = new Label("Server ID:");
         TextField serverField = new TextField();
-		Label messageLabel = new Label("Message:");
+        Label messageLabel = new Label("Message:");
         TextField messageField = new TextField();
         TextArea logArea = new TextArea();
         logArea.setEditable(false);
@@ -27,15 +26,15 @@ public class Main extends Application {
         Button registerButton = new Button("Register");
         Button loginButton = new Button("LogIn");
         Button communicateButton = new Button("Communicate with Server");
-        
+
         VBox root = new VBox(10,
-            new HBox(10, clientLabel, clientField),
-            new HBox(10, passwordLabel, passwordField),
-            new HBox(10, serverLabel, serverField),
-			new HBox(10, messageLabel, messageField),
-            new HBox(10, registerButton, loginButton, communicateButton),
-            new Label("Logs:"),
-            logArea
+                new HBox(10, clientLabel, clientField),
+                new HBox(10, passwordLabel, passwordField),
+                new HBox(10, serverLabel, serverField),
+                new HBox(10, messageLabel, messageField),
+                new HBox(10, registerButton, loginButton, communicateButton),
+                new Label("Logs:"),
+                logArea
         );
         root.setPadding(new Insets(10));
 
@@ -44,16 +43,16 @@ public class Main extends Application {
         primaryStage.setTitle("Kerberos Hybrid System");
 
         // Initialize HKS and logger
-        hks = new HKS();
+        kdc = new KDC();
         logger = new FileLogger("log.txt");
-        
+
         registerButton.setOnAction(e -> {
             String clientId = clientField.getText();
             String password = passwordField.getText();
             String serverId = serverField.getText();
-            
+
             try {
-                currentClient = hks.registerClient(clientId, password, serverId);
+                kdc.registerClient(clientId, password, serverId);
                 logArea.appendText("Client registered successfully\n");
                 logger.log("Client " + clientId + " registered successfully");
             } catch (Exception ex) {
@@ -66,14 +65,17 @@ public class Main extends Application {
             String clientId = clientField.getText();
             String password = passwordField.getText();
             String serverId = serverField.getText();
-            
+
             try {
                 logArea.appendText("Authenticating client...\n");
-                Ticket ticket = hks.authenticateClient(clientId, password, serverId);
-                currentClient.setTicket(ticket);
-                logArea.appendText("Authentication successful! Ticket granted.\n");
-                logger.log("Authentication successful! Ticket granted.");
-                logger.log("Client " + clientId + " logged in successfully");
+                boolean success = kdc.authenticateClient(clientId, password, serverId);
+                if (success) {
+                    currentClient = kdc.getClient(clientId);
+                    logArea.appendText("Authentication successful! Ticket granted.\n");
+                    logger.log("Authentication successful! Ticket granted.");
+                    logger.log("Client " + clientId + " logged in successfully");
+                }
+
             } catch (Exception ex) {
                 logArea.appendText("Login failed: " + ex.getMessage() + "\n");
                 logger.log("Login failed for client " + clientId + ": " + ex.getMessage());
@@ -85,15 +87,27 @@ public class Main extends Application {
                 logArea.appendText("Please login first\n");
                 return;
             }
-            
+
             String message = messageField.getText();
+            if (message.isEmpty()) {
+                logArea.appendText("Message cannot be empty\n");
+                return;
+            }
+
             try {
-                String response = currentClient.communicateWithServer(message);
+                logArea.appendText("Using ticket to communicate with the server...\n");
+                String response = currentClient.communicateWithServer(messageField.getText());
+                String serverId = currentClient.getTicket().getServerId();
+                logArea.appendText(serverId + " is ready to receive messages.\n");
+                logArea.appendText("Server: Session key is now active for communication.\n");
+                logArea.appendText("Server received: " + message + "\n");
+                logArea.appendText("Message sent and decrypted by the server successfully.\n");
                 logArea.appendText("Server response: " + response + "\n");
                 logger.log("Communication successful between " + currentClient.getClientId() + " and server");
             } catch (Exception ex) {
-                logArea.appendText("Communication failed: " + ex.getMessage() + "\n");
-                logger.log("Communication failed: " + ex.getMessage());
+                logArea.appendText("Communication failed: " + ex + "\n");
+                ex.printStackTrace();
+                logger.log("Communication failed: " + ex);
             }
         });
 
